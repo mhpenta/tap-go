@@ -18,8 +18,8 @@ type Tool struct {
 	Name          string
 	Description   string
 	Parameters    map[string]any
-	Handler       tinymcp.Handler
-	StreamHandler tinymcp.StreamHandler
+	Handler       tap.Handler
+	StreamHandler tap.StreamHandler
 }
 
 type Option func(*Server)
@@ -137,7 +137,7 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	if !ok {
 		s.logger.Warn("tool doc not found", "tool", name, "path", r.URL.Path)
-		writeError(w, http.StatusNotFound, tinymcp.ErrNotFound, "tool not found: "+name)
+		writeError(w, http.StatusNotFound, tap.ErrNotFound, "tool not found: "+name)
 		return
 	}
 
@@ -160,7 +160,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	if !ok {
 		s.logger.Warn("tool run not found", "tool", name, "path", r.URL.Path)
-		writeError(w, http.StatusNotFound, tinymcp.ErrNotFound, "tool not found: "+name)
+		writeError(w, http.StatusNotFound, tap.ErrNotFound, "tool not found: "+name)
 		return
 	}
 
@@ -170,11 +170,11 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			s.logger.Warn("tool run request body too large", "tool", name, "max_bytes", s.maxBodySize)
-			writeError(w, http.StatusBadRequest, tinymcp.ErrInvalidRequest, fmt.Sprintf("request body too large (max %d bytes)", s.maxBodySize))
+			writeError(w, http.StatusBadRequest, tap.ErrInvalidRequest, fmt.Sprintf("request body too large (max %d bytes)", s.maxBodySize))
 			return
 		}
 		s.logger.Warn("tool run invalid json", "tool", name, "error", err.Error())
-		writeError(w, http.StatusBadRequest, tinymcp.ErrInvalidRequest, "invalid JSON body: "+err.Error())
+		writeError(w, http.StatusBadRequest, tap.ErrInvalidRequest, "invalid JSON body: "+err.Error())
 		return
 	}
 
@@ -187,16 +187,16 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	if t.Handler == nil {
 		s.logger.Warn("tool requires streaming", "tool", name)
-		writeError(w, http.StatusBadRequest, tinymcp.ErrInvalidRequest, "tool requires streaming")
+		writeError(w, http.StatusBadRequest, tap.ErrInvalidRequest, "tool requires streaming")
 		return
 	}
 
 	// Recover panics from user handler code and return a structured execution_error.
 	result, err := runHandlerSafely(r.Context(), t.Handler, args)
 	if err != nil {
-		code := tinymcp.ErrExecution
+		code := tap.ErrExecution
 		msg := err.Error()
-		var tErr *tinymcp.Error
+		var tErr *tap.Error
 		if errors.As(err, &tErr) {
 			code = tErr.Code
 			msg = tErr.Message
@@ -213,7 +213,7 @@ func (s *Server) handleStreamRun(w http.ResponseWriter, r *http.Request, t *Tool
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		s.logger.Error("streaming not supported by response writer", "tool", t.Name)
-		writeError(w, http.StatusInternalServerError, tinymcp.ErrExecution, "streaming not supported")
+		writeError(w, http.StatusInternalServerError, tap.ErrExecution, "streaming not supported")
 		return
 	}
 
@@ -226,15 +226,15 @@ func (s *Server) handleStreamRun(w http.ResponseWriter, r *http.Request, t *Tool
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	stream := tinymcp.NewStream()
+	stream := tap.NewStream()
 	hadError := make(chan bool, 1)
 
 	go func() {
 		defer stream.Close()
 		if err := runStreamHandlerSafely(ctx, t.StreamHandler, args, stream); err != nil {
-			code := tinymcp.ErrExecution
+			code := tap.ErrExecution
 			msg := err.Error()
-			var tErr *tinymcp.Error
+			var tErr *tap.Error
 			if errors.As(err, &tErr) {
 				code = tErr.Code
 				msg = tErr.Message
@@ -255,7 +255,7 @@ func (s *Server) handleStreamRun(w http.ResponseWriter, r *http.Request, t *Tool
 
 		data, err := json.Marshal(ev.Data)
 		if err != nil {
-			sseErr, _ := json.Marshal(tinymcp.NewError(tinymcp.ErrExecution, "marshal failed"))
+			sseErr, _ := json.Marshal(tap.NewError(tap.ErrExecution, "marshal failed"))
 			_ = writeSSEEvent(w, flusher, "error", sseErr)
 			s.logger.Error("failed to marshal stream event", "tool", t.Name, "event_type", ev.Type)
 			writeFailed = true
@@ -275,7 +275,7 @@ func (s *Server) handleStreamRun(w http.ResponseWriter, r *http.Request, t *Tool
 	}
 }
 
-func runHandlerSafely(ctx context.Context, handler tinymcp.Handler, args json.RawMessage) (result any, err error) {
+func runHandlerSafely(ctx context.Context, handler tap.Handler, args json.RawMessage) (result any, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = panicToExecutionError(recovered)
@@ -284,7 +284,7 @@ func runHandlerSafely(ctx context.Context, handler tinymcp.Handler, args json.Ra
 	return handler(ctx, args)
 }
 
-func runStreamHandlerSafely(ctx context.Context, handler tinymcp.StreamHandler, args json.RawMessage, stream *tinymcp.Stream) (err error) {
+func runStreamHandlerSafely(ctx context.Context, handler tap.StreamHandler, args json.RawMessage, stream *tap.Stream) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = panicToExecutionError(recovered)
@@ -295,9 +295,9 @@ func runStreamHandlerSafely(ctx context.Context, handler tinymcp.StreamHandler, 
 
 func panicToExecutionError(recovered any) error {
 	if err, ok := recovered.(error); ok {
-		return tinymcp.NewError(tinymcp.ErrExecution, "tool panicked: "+err.Error())
+		return tap.NewError(tap.ErrExecution, "tool panicked: "+err.Error())
 	}
-	return tinymcp.NewError(tinymcp.ErrExecution, "tool panicked: "+fmt.Sprint(recovered))
+	return tap.NewError(tap.ErrExecution, "tool panicked: "+fmt.Sprint(recovered))
 }
 
 func acceptsSSE(r *http.Request) bool {
@@ -307,15 +307,15 @@ func acceptsSSE(r *http.Request) bool {
 
 func statusFromCode(code string) int {
 	switch code {
-	case tinymcp.ErrInvalidRequest:
+	case tap.ErrInvalidRequest:
 		return http.StatusBadRequest
-	case tinymcp.ErrUnauthorized:
+	case tap.ErrUnauthorized:
 		return http.StatusUnauthorized
-	case tinymcp.ErrNotFound:
+	case tap.ErrNotFound:
 		return http.StatusNotFound
-	case tinymcp.ErrTimeout:
+	case tap.ErrTimeout:
 		return http.StatusRequestTimeout
-	case tinymcp.ErrRateLimited:
+	case tap.ErrRateLimited:
 		return http.StatusTooManyRequests
 	default:
 		return http.StatusInternalServerError
@@ -350,5 +350,5 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(tinymcp.NewError(code, message))
+	json.NewEncoder(w).Encode(tap.NewError(code, message))
 }

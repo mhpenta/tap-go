@@ -31,7 +31,7 @@ type ToolClient interface {
 	List(ctx context.Context) (*ListResult, error)
 	Get(ctx context.Context, name string) (*ToolDoc, error)
 	Run(ctx context.Context, name string, args any) (json.RawMessage, error)
-	RunStream(ctx context.Context, name string, args any) (<-chan tinymcp.Event, error)
+	RunStream(ctx context.Context, name string, args any) (<-chan tap.Event, error)
 }
 
 type Client struct {
@@ -294,7 +294,7 @@ func (c *Client) Run(ctx context.Context, name string, args any) (json.RawMessag
 	return filtered, nil
 }
 
-func (c *Client) RunStream(ctx context.Context, name string, args any) (<-chan tinymcp.Event, error) {
+func (c *Client) RunStream(ctx context.Context, name string, args any) (<-chan tap.Event, error) {
 	body, err := json.Marshal(args)
 	if err != nil {
 		return nil, err
@@ -325,14 +325,14 @@ func (c *Client) RunStream(ctx context.Context, name string, args any) (<-chan t
 		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 			return nil, err
 		}
-		ch := make(chan tinymcp.Event, 2)
-		ch <- tinymcp.Event{Type: "result", Data: envelope.Result}
-		ch <- tinymcp.Event{Type: "done"}
+		ch := make(chan tap.Event, 2)
+		ch <- tap.Event{Type: "result", Data: envelope.Result}
+		ch <- tap.Event{Type: "done"}
 		close(ch)
 		return ch, nil
 	}
 
-	ch := make(chan tinymcp.Event, 64)
+	ch := make(chan tap.Event, 64)
 	go func() {
 		defer resp.Body.Close()
 		defer close(ch)
@@ -358,16 +358,16 @@ func (c *Client) RunStream(ctx context.Context, name string, args any) (<-chan t
 				if eventType == "" {
 					eventType = "result"
 				}
-				ch <- tinymcp.Event{Type: eventType, Data: parsed}
+				ch <- tap.Event{Type: eventType, Data: parsed}
 				eventType = ""
 				continue
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			ch <- tinymcp.Event{
+			ch <- tap.Event{
 				Type: "error",
-				Data: tinymcp.NewError(tinymcp.ErrExecution, "stream read error: "+err.Error()),
+				Data: tap.NewError(tap.ErrExecution, "stream read error: "+err.Error()),
 			}
 		}
 	}()
@@ -380,11 +380,11 @@ func checkStatus(resp *http.Response) error {
 		return nil
 	}
 	body, _ := io.ReadAll(resp.Body)
-	var tErr tinymcp.Error
+	var tErr tap.Error
 	if json.Unmarshal(body, &tErr) == nil && tErr.Code != "" {
 		return &tErr
 	}
-	return &tinymcp.Error{
+	return &tap.Error{
 		Code:    codeFromStatus(resp.StatusCode),
 		Message: truncateMessage(string(body), maxErrorMessageLen),
 	}
@@ -407,18 +407,18 @@ func truncateMessage(s string, max int) string {
 func codeFromStatus(status int) string {
 	switch status {
 	case http.StatusBadRequest:
-		return tinymcp.ErrInvalidRequest
+		return tap.ErrInvalidRequest
 	case http.StatusRequestEntityTooLarge:
-		return tinymcp.ErrInvalidRequest
+		return tap.ErrInvalidRequest
 	case http.StatusUnauthorized:
-		return tinymcp.ErrUnauthorized
+		return tap.ErrUnauthorized
 	case http.StatusNotFound:
-		return tinymcp.ErrNotFound
+		return tap.ErrNotFound
 	case http.StatusRequestTimeout:
-		return tinymcp.ErrTimeout
+		return tap.ErrTimeout
 	case http.StatusTooManyRequests:
-		return tinymcp.ErrRateLimited
+		return tap.ErrRateLimited
 	default:
-		return tinymcp.ErrExecution
+		return tap.ErrExecution
 	}
 }

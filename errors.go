@@ -1,4 +1,4 @@
-package tinymcp
+package tap
 
 import "fmt"
 
