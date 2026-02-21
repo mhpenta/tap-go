@@ -88,7 +88,7 @@ func testServer() (*server.Server, *httptest.Server) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return map[string]any{"answer": 42}, nil
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			stream.Result(map[string]any{"answer": 42})
 			return nil
 		},
@@ -106,7 +106,7 @@ func testServer() (*server.Server, *httptest.Server) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return "final result", nil
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			stream.Progress(0.5, "halfway")
 			stream.Progress(1.0, "done")
 			stream.Result("final result")
@@ -121,7 +121,7 @@ func testServer() (*server.Server, *httptest.Server) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return []string{"chunk1", "chunk2", "chunk3"}, nil
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			stream.Result("chunk1")
 			stream.Result("chunk2")
 			stream.Result("chunk3")
@@ -136,7 +136,7 @@ func testServer() (*server.Server, *httptest.Server) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return nil, fmt.Errorf("boom")
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			stream.Progress(0.25, "starting")
 			return fmt.Errorf("boom mid-stream")
 		},
@@ -328,12 +328,12 @@ func TestRunToolRejectsLargeBody(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var tErr tinymcp.Error
+	var tErr tap.Error
 	if err := json.Unmarshal(body, &tErr); err != nil {
 		t.Fatalf("expected structured error JSON, got: %s", body)
 	}
-	if tErr.Code != tinymcp.ErrInvalidRequest {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrInvalidRequest, tErr.Code)
+	if tErr.Code != tap.ErrInvalidRequest {
+		t.Fatalf("expected code %q, got %q", tap.ErrInvalidRequest, tErr.Code)
 	}
 	if !strings.Contains(tErr.Message, "too large") {
 		t.Fatalf("expected size limit message, got: %q", tErr.Message)
@@ -349,12 +349,12 @@ func TestRunToolEmptyBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %s", err, err)
+		t.Fatalf("expected tap.Error, got %T: %s", err, err)
 	}
-	if tErr.Code != tinymcp.ErrExecution {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrExecution, tErr.Code)
+	if tErr.Code != tap.ErrExecution {
+		t.Fatalf("expected code %q, got %q", tap.ErrExecution, tErr.Code)
 	}
 	if !strings.Contains(tErr.Message, "something broke") {
 		t.Fatalf("expected message containing 'something broke', got: %s", tErr.Message)
@@ -380,12 +380,12 @@ func TestErrorResponseFormat(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var errResp tinymcp.Error
+	var errResp tap.Error
 	if err := json.Unmarshal(body, &errResp); err != nil {
 		t.Fatalf("error response is not valid JSON: %s", body)
 	}
-	if errResp.Code != tinymcp.ErrNotFound {
-		t.Fatalf("expected error code %q, got %q", tinymcp.ErrNotFound, errResp.Code)
+	if errResp.Code != tap.ErrNotFound {
+		t.Fatalf("expected error code %q, got %q", tap.ErrNotFound, errResp.Code)
 	}
 	if errResp.Message == "" {
 		t.Fatal("expected non-empty error message")
@@ -482,7 +482,7 @@ func TestStreamProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var events []tinymcp.Event
+	var events []tap.Event
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
@@ -524,7 +524,7 @@ func TestStreamChunked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var results []tinymcp.Event
+	var results []tap.Event
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
@@ -562,7 +562,7 @@ func TestStreamError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var events []tinymcp.Event
+	var events []tap.Event
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
@@ -806,12 +806,12 @@ func TestWireFormatErrorMidStream(t *testing.T) {
 	if last.eventType != "error" {
 		t.Fatalf("last event: expected error, got %s", last.eventType)
 	}
-	var sseErr tinymcp.Error
+	var sseErr tap.Error
 	if err := json.Unmarshal([]byte(last.data), &sseErr); err != nil {
 		t.Fatalf("error event data is not structured error: %s", last.data)
 	}
-	if sseErr.Code != tinymcp.ErrExecution {
-		t.Fatalf("expected error code %q, got %q", tinymcp.ErrExecution, sseErr.Code)
+	if sseErr.Code != tap.ErrExecution {
+		t.Fatalf("expected error code %q, got %q", tap.ErrExecution, sseErr.Code)
 	}
 	if !strings.Contains(sseErr.Message, "boom mid-stream") {
 		t.Fatalf("error message should contain 'boom mid-stream', got: %s", sseErr.Message)
@@ -879,12 +879,12 @@ func TestErrorCodeNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %s", err, err)
+		t.Fatalf("expected tap.Error, got %T: %s", err, err)
 	}
-	if tErr.Code != tinymcp.ErrNotFound {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrNotFound, tErr.Code)
+	if tErr.Code != tap.ErrNotFound {
+		t.Fatalf("expected code %q, got %q", tap.ErrNotFound, tErr.Code)
 	}
 }
 
@@ -905,12 +905,12 @@ func TestErrorCodeInvalidRequest(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var tErr tinymcp.Error
+	var tErr tap.Error
 	if err := json.Unmarshal(body, &tErr); err != nil {
 		t.Fatalf("expected structured error, got: %s", body)
 	}
-	if tErr.Code != tinymcp.ErrInvalidRequest {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrInvalidRequest, tErr.Code)
+	if tErr.Code != tap.ErrInvalidRequest {
+		t.Fatalf("expected code %q, got %q", tap.ErrInvalidRequest, tErr.Code)
 	}
 }
 
@@ -923,12 +923,12 @@ func TestErrorCodeExecution(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %s", err, err)
+		t.Fatalf("expected tap.Error, got %T: %s", err, err)
 	}
-	if tErr.Code != tinymcp.ErrExecution {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrExecution, tErr.Code)
+	if tErr.Code != tap.ErrExecution {
+		t.Fatalf("expected code %q, got %q", tap.ErrExecution, tErr.Code)
 	}
 	if !strings.Contains(tErr.Message, "something broke") {
 		t.Fatalf("expected message about 'something broke', got: %s", tErr.Message)
@@ -944,12 +944,12 @@ func TestErrorCodeUnauthorized(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %s", err, err)
+		t.Fatalf("expected tap.Error, got %T: %s", err, err)
 	}
-	if tErr.Code != tinymcp.ErrUnauthorized {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrUnauthorized, tErr.Code)
+	if tErr.Code != tap.ErrUnauthorized {
+		t.Fatalf("expected code %q, got %q", tap.ErrUnauthorized, tErr.Code)
 	}
 }
 
@@ -960,7 +960,7 @@ func TestHandlerCanReturnTypedError(t *testing.T) {
 		Description: "Returns a typed error",
 		Parameters:  map[string]any{},
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
-			return nil, tinymcp.NewError(tinymcp.ErrInvalidRequest, "field 'cik' is required")
+			return nil, tap.NewError(tap.ErrInvalidRequest, "field 'cik' is required")
 		},
 	})
 	mux := http.NewServeMux()
@@ -973,12 +973,12 @@ func TestHandlerCanReturnTypedError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %s", err, err)
+		t.Fatalf("expected tap.Error, got %T: %s", err, err)
 	}
-	if tErr.Code != tinymcp.ErrInvalidRequest {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrInvalidRequest, tErr.Code)
+	if tErr.Code != tap.ErrInvalidRequest {
+		t.Fatalf("expected code %q, got %q", tap.ErrInvalidRequest, tErr.Code)
 	}
 	if tErr.Message != "field 'cik' is required" {
 		t.Fatalf("expected specific message, got: %s", tErr.Message)
@@ -992,7 +992,7 @@ func TestHandlerTypedErrorUsesMatchingHTTPStatus(t *testing.T) {
 		Description: "Returns a typed error",
 		Parameters:  map[string]any{},
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
-			return nil, tinymcp.NewError(tinymcp.ErrInvalidRequest, "field 'cik' is required")
+			return nil, tap.NewError(tap.ErrInvalidRequest, "field 'cik' is required")
 		},
 	})
 	mux := http.NewServeMux()
@@ -1013,12 +1013,12 @@ func TestHandlerTypedErrorUsesMatchingHTTPStatus(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	var tErr tinymcp.Error
+	var tErr tap.Error
 	if err := json.Unmarshal(body, &tErr); err != nil {
 		t.Fatalf("expected structured error, got: %s", body)
 	}
-	if tErr.Code != tinymcp.ErrInvalidRequest {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrInvalidRequest, tErr.Code)
+	if tErr.Code != tap.ErrInvalidRequest {
+		t.Fatalf("expected code %q, got %q", tap.ErrInvalidRequest, tErr.Code)
 	}
 }
 
@@ -1112,12 +1112,12 @@ func TestRunRecoversFromHandlerPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %v", err, err)
+		t.Fatalf("expected tap.Error, got %T: %v", err, err)
 	}
-	if tErr.Code != tinymcp.ErrExecution {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrExecution, tErr.Code)
+	if tErr.Code != tap.ErrExecution {
+		t.Fatalf("expected code %q, got %q", tap.ErrExecution, tErr.Code)
 	}
 	if !strings.Contains(tErr.Message, "tool panicked: handler boom") {
 		t.Fatalf("unexpected message: %q", tErr.Message)
@@ -1133,7 +1133,7 @@ func TestWireFormatRecoversFromStreamHandlerPanic(t *testing.T) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return "fallback", nil
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			stream.Progress(0.1, "starting")
 			panic("stream boom")
 		},
@@ -1162,12 +1162,12 @@ func TestWireFormatRecoversFromStreamHandlerPanic(t *testing.T) {
 		t.Fatalf("expected terminal error event, got %q", last.eventType)
 	}
 
-	var tErr tinymcp.Error
+	var tErr tap.Error
 	if err := json.Unmarshal([]byte(last.data), &tErr); err != nil {
 		t.Fatalf("expected structured error JSON, got %s", last.data)
 	}
-	if tErr.Code != tinymcp.ErrExecution {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrExecution, tErr.Code)
+	if tErr.Code != tap.ErrExecution {
+		t.Fatalf("expected code %q, got %q", tap.ErrExecution, tErr.Code)
 	}
 	if !strings.Contains(tErr.Message, "tool panicked: stream boom") {
 		t.Fatalf("unexpected message: %q", tErr.Message)
@@ -1184,7 +1184,7 @@ func TestStreamMarshalFailureDoesNotBlockHandler(t *testing.T) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return "fallback", nil
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			defer close(handlerDone)
 
 			// json.Marshal cannot encode func values; this triggers an SSE encode error.

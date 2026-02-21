@@ -215,7 +215,7 @@ func TestRunStreamLargeEventPayload(t *testing.T) {
 		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
 			return "fallback", nil
 		},
-		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tinymcp.Stream) error {
+		StreamHandler: func(ctx context.Context, args json.RawMessage, stream *tap.Stream) error {
 			stream.Result(strings.Repeat("x", 70*1024))
 			return nil
 		},
@@ -282,12 +282,12 @@ func TestListTruncatesLargeNonJSONErrorBody(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	var tErr *tinymcp.Error
+	var tErr *tap.Error
 	if !errors.As(err, &tErr) {
-		t.Fatalf("expected tinymcp.Error, got %T: %v", err, err)
+		t.Fatalf("expected tap.Error, got %T: %v", err, err)
 	}
-	if tErr.Code != tinymcp.ErrExecution {
-		t.Fatalf("expected code %q, got %q", tinymcp.ErrExecution, tErr.Code)
+	if tErr.Code != tap.ErrExecution {
+		t.Fatalf("expected code %q, got %q", tap.ErrExecution, tErr.Code)
 	}
 	if len(tErr.Message) > 512 {
 		t.Fatalf("expected truncated message <= 512 chars, got %d", len(tErr.Message))
