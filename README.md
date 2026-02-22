@@ -2,10 +2,6 @@
 
 A tiny HTTP pattern for tool discovery and execution.
 
-This repository is the Go implementation:
-- module path: `github.com/mhpenta/tap-go`
-- current package name: `tinymcp` (historical name, protocol name is TAP)
-
 ## Protocol
 
 ```text
